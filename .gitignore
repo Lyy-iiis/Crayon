@@ -1,3 +1,6 @@
 ViT_LoRA/data
 __pycache__/
 ViT_LoRA/vit-base-patch16-224-in21k-finetuned-lora-food101
+.DS_Store
+CheXbert/.DS_Store
+LLM_LoRA/data
