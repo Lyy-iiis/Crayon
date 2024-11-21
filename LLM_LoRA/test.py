@@ -1,6 +1,6 @@
 import torch
 from transformers import Trainer
-from LLM_LoRA.llm import LLM_LoRA, TextDataset
+from llm import LLM_LoRA, TextDataset
 import evaluate
 import numpy as np
 
@@ -11,8 +11,8 @@ def compute_metrics(eval_pred):
     return metric.compute(predictions=predictions, references=labels)
 
 def main():
-    config_path = "adapter_config.json"
-    dataset_name = 'PleIAs/common_corpus'
+    config_path = "LLM_LoRA/adapter_config.json"
+    dataset_name = 'microsoft/orca-agentinstruct-1M-v1'
     dataset = TextDataset(dataset_name)
     dataset.set_transform()
     model = LLM_LoRA(config_path)

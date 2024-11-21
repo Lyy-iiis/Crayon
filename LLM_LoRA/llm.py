@@ -10,14 +10,19 @@ from datasets import load_dataset
 from transformers import AutoTokenizer
 
 class LLM_LoRA(nn.Module):
-    def __init__(self, config_path: str, *args, **kwargs):
+    def __init__(self, config_path: str, model_path: str = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         with open(config_path, 'r') as f:
             config = json.load(f)
         
         self.model_checkpoint = config["base_model_name_or_path"]
-        self.model = AutoModelForCausalLM.from_pretrained(self.model_checkpoint)
         self.config = config
+        
+        if model_path:
+            self.model = AutoModelForCausalLM.from_pretrained(model_path)
+        else:
+            self.model = AutoModelForCausalLM.from_pretrained(self.model_checkpoint)
+        
         self.apply_lora()
 
     def apply_lora(self):
@@ -32,6 +37,16 @@ class LLM_LoRA(nn.Module):
         self.model = get_peft_model(self.model, lora_config)
         self.print_trainable_parameters()
 
+    def merge_lora(self):
+        for name, module in self.model.named_modules():
+            if hasattr(module, 'lora_A') and hasattr(module, 'lora_B'):
+                weight = module.weight.data
+                lora_A = module.lora_A.weight.data
+                lora_B = module.lora_B.weight.data
+                module.weight.data = weight + torch.matmul(lora_A, lora_B)
+                del module.lora_A
+                del module.lora_B
+
     def print_trainable_parameters(self):
         trainable_params = 0
         all_param = 0
@@ -44,7 +59,7 @@ class LLM_LoRA(nn.Module):
         )
 
     def train(self):
-        batch_size = 128
+        batch_size = 1
         args = TrainingArguments(
             f"{self.model_checkpoint.split('/')[-1]}-finetuned-lora",
             remove_unused_columns=False,
@@ -55,8 +70,9 @@ class LLM_LoRA(nn.Module):
             gradient_accumulation_steps=4,
             per_device_eval_batch_size=batch_size,
             fp16=True,
-            num_train_epochs=5,
+            num_train_epochs=1,
             logging_steps=10,
+            logging_dir="./logs",
             load_best_model_at_end=True,
             metric_for_best_model="accuracy",
             # push_to_hub=True,
@@ -66,10 +82,10 @@ class LLM_LoRA(nn.Module):
         return args
 
 class TextDataset:
-    def __init__(self, dataset_name: str = 'PleIAs/common_corpus', split: str = "train", *args, **kwargs):
+    def __init__(self, dataset_name: str = 'microsoft/orca-agentinstruct-1M-v1', split: str = "creative_content", *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.dataset = load_dataset(dataset_name, split=split, cache_dir="./data")
-        self.tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-11B-Vision-Instruct")
+        self.dataset = load_dataset(dataset_name, split=split, cache_dir="../autodl-tmp/data")
+        self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-1.5B")
         self.splits()
         
         self.train_transforms = None
@@ -83,13 +99,13 @@ class TextDataset:
     def set_transform(self):
         def preprocess_train(example_batch):
             """Apply train_transforms across a batch."""
-            example_batch["input_ids"] = self.tokenizer(example_batch["text"], truncation=True, padding="max_length", max_length=512)["input_ids"]
+            example_batch["input_ids"] = self.tokenizer(example_batch["messages"], truncation=True, padding="max_length", max_length=512)["input_ids"]
             example_batch["labels"] = example_batch["input_ids"].copy()
             return example_batch
 
         def preprocess_val(example_batch):
             """Apply val_transforms across a batch."""
-            example_batch["input_ids"] = self.tokenizer(example_batch["text"], truncation=True, padding="max_length", max_length=512)["input_ids"]
+            example_batch["input_ids"] = self.tokenizer(example_batch["messages"], truncation=True, padding="max_length", max_length=512)["input_ids"]
             example_batch["labels"] = example_batch["input_ids"].copy()
             return example_batch
         
